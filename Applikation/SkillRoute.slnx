@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SkillRoute_BlazorApp/SkillRoute_BlazorApp.csproj" />
+  <Project Path="SkillRoute_UnitTests/SkillRoute_UnitTests.csproj" Id="c659d279-895b-495b-87f2-443615be8eca" />
+</Solution>
