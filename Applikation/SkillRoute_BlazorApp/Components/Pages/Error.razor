@@ -1,10 +1,12 @@
-﻿@page "/Error"
+@page "/Error"
 @using System.Diagnostics
 
 <PageTitle>Fehler</PageTitle>
 
-<h1 class="text-danger">Fehler.</h1>
-<h2 class="text-danger">Beim Verarbeiten der Anfrage ist ein Fehler aufgetreten.</h2>
+<div class="page-header">
+    <h1 class="text-danger">Fehler</h1>
+    <p class="lead">Beim Verarbeiten der Anfrage ist ein Fehler aufgetreten.</p>
+</div>
 
 @if (ShowRequestId)
 {
@@ -12,17 +14,6 @@
         <strong>Anfrage-ID:</strong> <code>@RequestId</code>
     </p>
 }
-
-<h3>Entwicklungsmodus</h3>
-<p>
-    In der Umgebung <strong>Development</strong> werden genauere Informationen zum aufgetretenen Fehler angezeigt.
-</p>
-<p>
-    <strong>Die Development-Umgebung sollte bei veröffentlichten Anwendungen nicht aktiviert sein.</strong>
-    Sonst können sensible Informationen aus Fehlern für Benutzer sichtbar werden.
-    Für lokales Debugging kann die Umgebung <strong>Development</strong> über die Umgebungsvariable <strong>ASPNETCORE_ENVIRONMENT</strong> aktiviert werden.
-    Danach muss die App neu gestartet werden.
-</p>
 
 @code{
     [CascadingParameter]
