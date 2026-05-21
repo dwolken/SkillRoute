@@ -17,7 +17,26 @@ a, .btn-link {
 }
 
 .content {
-    padding-top: 1.1rem;
+    max-width: 960px;
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+}
+
+.page-header {
+    margin-bottom: 1.75rem;
+}
+
+.page-header h1 {
+    margin-bottom: 0.75rem;
+}
+
+.page-header .lead {
+    max-width: 760px;
+    color: #495057;
+}
+
+.simple-card {
+    border-color: #dee2e6;
 }
 
 h1:focus {
@@ -43,7 +62,7 @@ h1:focus {
 }
 
     .blazor-error-boundary::after {
-        content: "An error has occurred."
+        content: "Ein Fehler ist aufgetreten."
     }
 
 .darker-border-checkbox.form-check-input {
