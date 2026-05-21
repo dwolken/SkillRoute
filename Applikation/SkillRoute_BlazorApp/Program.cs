@@ -1,12 +1,23 @@
+using Microsoft.EntityFrameworkCore;
 using SkillRoute_BlazorApp.Components;
+using SkillRoute_BlazorApp.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddDbContext<SkillRouteDbContext>(options =>
+    options.UseSqlite("Data Source=skillroute.db"));
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<SkillRouteDbContext>();
+    await dbContext.Database.EnsureCreatedAsync();
+    await DatabaseSeeder.SeedAsync(dbContext);
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
