@@ -1,0 +1,137 @@
+@page "/blocks/new"
+@page "/blocks/edit/{Id:int}"
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.EntityFrameworkCore
+@using SkillRoute_BlazorApp.Infrastructure
+@using SkillRoute_BlazorApp.Model
+@inject SkillRouteDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>@PageTitleText</PageTitle>
+
+@if (isLoading)
+{
+    <p>Baustein wird geladen.</p>
+}
+else if (Id.HasValue && block is null)
+{
+    <div class="page-header">
+        <h1>Baustein nicht gefunden</h1>
+    </div>
+
+    <a class="btn btn-outline-secondary" href="/blocks">Zurück</a>
+}
+else
+{
+    <div class="page-header">
+        <h1>@PageTitleText</h1>
+    </div>
+
+    <EditForm Model="form" OnValidSubmit="SaveBlockAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="mb-3">
+            <label class="form-label" for="block-title">Titel</label>
+            <InputText id="block-title" class="form-control" @bind-Value="form.Title" />
+            <ValidationMessage For="() => form.Title" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="block-description">Beschreibung</label>
+            <InputTextArea id="block-description" class="form-control" rows="4" @bind-Value="form.Description" />
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label" for="block-status">Status</label>
+            <InputSelect id="block-status" class="form-select" @bind-Value="form.Status">
+                @foreach (var status in Enum.GetValues<BlockStatus>())
+                {
+                    <option value="@status">@GetStatusText(status)</option>
+                }
+            </InputSelect>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" type="submit">Speichern</button>
+            <a class="btn btn-outline-secondary" href="@BackLink">Zurück</a>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private LearningBlock? block;
+    private BlockForm form = new();
+    private bool isLoading = true;
+
+    private string PageTitleText => Id.HasValue ? "Baustein bearbeiten" : "Neuer Baustein";
+
+    private string BackLink => Id.HasValue ? $"/blocks/{Id}" : "/blocks";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        block = null;
+        form = new BlockForm();
+
+        if (Id.HasValue)
+        {
+            block = await DbContext.LearningBlocks
+                .SingleOrDefaultAsync(learningBlock => learningBlock.Id == Id.Value);
+
+            if (block is not null)
+            {
+                form.Title = block.Title;
+                form.Description = block.Description;
+                form.Status = block.Status;
+            }
+        }
+
+        isLoading = false;
+    }
+
+    private async Task SaveBlockAsync()
+    {
+        var now = DateTime.UtcNow;
+
+        if (block is null)
+        {
+            block = new LearningBlock
+            {
+                CreatedAt = now
+            };
+
+            DbContext.LearningBlocks.Add(block);
+        }
+
+        block.Title = form.Title.Trim();
+        block.Description = form.Description ?? string.Empty;
+        block.Status = form.Status;
+        block.UpdatedAt = now;
+
+        await DbContext.SaveChangesAsync();
+        Navigation.NavigateTo($"/blocks/{block.Id}");
+    }
+
+    private static string GetStatusText(BlockStatus status) => status switch
+    {
+        BlockStatus.Open => "Offen",
+        BlockStatus.InProgress => "In Arbeit",
+        BlockStatus.Understood => "Verstanden",
+        _ => status.ToString()
+    };
+
+    private sealed class BlockForm
+    {
+        [Required(ErrorMessage = "Der Titel ist erforderlich.")]
+        public string Title { get; set; } = string.Empty;
+
+        public string? Description { get; set; } = string.Empty;
+
+        public BlockStatus Status { get; set; } = BlockStatus.Open;
+    }
+}
