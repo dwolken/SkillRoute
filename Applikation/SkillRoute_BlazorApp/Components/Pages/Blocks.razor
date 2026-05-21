@@ -1,10 +1,131 @@
 @page "/blocks"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using SkillRoute_BlazorApp.Infrastructure
+@using SkillRoute_BlazorApp.Model
+@inject SkillRouteDbContext DbContext
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
 
-<PageTitle>Verwaltung</PageTitle>
+<PageTitle>Bausteine</PageTitle>
 
-<div class="page-header">
-    <h1>Verwaltung</h1>
-    <p class="lead">
-        Hier werden Lernblöcke verwaltet.
-    </p>
+<div class="page-header d-flex flex-wrap justify-content-between align-items-start gap-3">
+    <div>
+        <h1>Bausteine</h1>
+        <p class="lead mb-0">
+            Lernbausteine verwalten.
+        </p>
+    </div>
+
+    <a class="btn btn-primary" href="/blocks/new">Neuer Baustein</a>
 </div>
+
+@if (blocks is null)
+{
+    <p>Bausteine werden geladen.</p>
+}
+else if (blocks.Count == 0)
+{
+    <div class="border rounded p-4 text-secondary">
+        Es gibt noch keine Bausteine.
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var block in blocks)
+        {
+            <div class="col-12">
+                <div class="card simple-card">
+                    <div class="card-body" role="link" tabindex="0"
+                         @onclick="() => OpenDetails(block.Id)"
+                         @onkeydown="args => OpenDetailsWithKeyboard(args, block.Id)">
+                        <div class="d-flex flex-wrap justify-content-between gap-2">
+                            <h2 class="h5 mb-0">@block.Title</h2>
+                            <span class="text-secondary">@GetStatusText(block.Status)</span>
+                        </div>
+
+                        <p class="mb-0 mt-3 text-secondary">
+                            @GetDescription(block.Description)
+                        </p>
+                    </div>
+
+                    <div class="card-footer bg-white border-top d-flex flex-wrap gap-2">
+                        <a class="btn btn-outline-secondary btn-sm" href="@($"/blocks/edit/{block.Id}")">Bearbeiten</a>
+                        <button class="btn btn-outline-danger btn-sm" type="button" @onclick="() => DeleteBlockAsync(block.Id)">
+                            Löschen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<LearningBlock>? blocks;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBlocksAsync();
+    }
+
+    private async Task LoadBlocksAsync()
+    {
+        blocks = await DbContext.LearningBlocks
+            .OrderBy(block => block.Title)
+            .ThenBy(block => block.Id)
+            .ToListAsync();
+    }
+
+    private void OpenDetails(int id)
+    {
+        Navigation.NavigateTo($"/blocks/{id}");
+    }
+
+    private void OpenDetailsWithKeyboard(KeyboardEventArgs args, int id)
+    {
+        if (args.Key is "Enter" or " ")
+        {
+            OpenDetails(id);
+        }
+    }
+
+    private async Task DeleteBlockAsync(int id)
+    {
+        var shouldDelete = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Dieser Baustein wird gelöscht und aus allen anderen Bausteinen entfernt, in denen er verwendet wird. Fortfahren?");
+
+        if (!shouldDelete)
+        {
+            return;
+        }
+
+        var block = await DbContext.LearningBlocks.FindAsync(id);
+        if (block is null)
+        {
+            await LoadBlocksAsync();
+            return;
+        }
+
+        DbContext.LearningBlocks.Remove(block);
+        await DbContext.SaveChangesAsync();
+        await LoadBlocksAsync();
+    }
+
+    private static string GetStatusText(BlockStatus status) => status switch
+    {
+        BlockStatus.Open => "Offen",
+        BlockStatus.InProgress => "In Arbeit",
+        BlockStatus.Understood => "Verstanden",
+        _ => status.ToString()
+    };
+
+    private static string GetDescription(string description)
+    {
+        return string.IsNullOrWhiteSpace(description)
+            ? "Keine Beschreibung."
+            : description;
+    }
+}

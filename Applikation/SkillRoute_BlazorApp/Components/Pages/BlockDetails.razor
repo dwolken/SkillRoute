@@ -1,0 +1,100 @@
+@page "/blocks/{Id:int}"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using SkillRoute_BlazorApp.Infrastructure
+@using SkillRoute_BlazorApp.Model
+@inject SkillRouteDbContext DbContext
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Baustein</PageTitle>
+
+@if (block is null)
+{
+    <div class="page-header">
+        <h1>Baustein nicht gefunden</h1>
+    </div>
+
+    <a class="btn btn-outline-secondary" href="/blocks">Zurück</a>
+}
+else
+{
+    <div class="page-header">
+        <h1>@block.Title</h1>
+    </div>
+
+    <div class="border rounded p-4">
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Titel</dt>
+            <dd class="col-sm-9">@block.Title</dd>
+
+            <dt class="col-sm-3">Beschreibung</dt>
+            <dd class="col-sm-9">@GetDescription(block.Description)</dd>
+
+            <dt class="col-sm-3">Status</dt>
+            <dd class="col-sm-9">@GetStatusText(block.Status)</dd>
+
+            <dt class="col-sm-3">Erstellt</dt>
+            <dd class="col-sm-9">@block.CreatedAt.ToString("dd.MM.yyyy HH:mm")</dd>
+
+            <dt class="col-sm-3">Aktualisiert</dt>
+            <dd class="col-sm-9 mb-0">@block.UpdatedAt.ToString("dd.MM.yyyy HH:mm")</dd>
+        </dl>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-primary" href="@($"/blocks/edit/{block.Id}")">Bearbeiten</a>
+        <button class="btn btn-outline-danger" type="button" @onclick="DeleteBlockAsync">Löschen</button>
+        <a class="btn btn-outline-secondary" href="/blocks">Zurück</a>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private LearningBlock? block;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        block = await DbContext.LearningBlocks
+            .AsNoTracking()
+            .SingleOrDefaultAsync(learningBlock => learningBlock.Id == Id);
+    }
+
+    private async Task DeleteBlockAsync()
+    {
+        var shouldDelete = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Dieser Baustein wird gelöscht und aus allen anderen Bausteinen entfernt, in denen er verwendet wird. Fortfahren?");
+
+        if (!shouldDelete)
+        {
+            return;
+        }
+
+        var blockToDelete = await DbContext.LearningBlocks.FindAsync(Id);
+        if (blockToDelete is not null)
+        {
+            DbContext.LearningBlocks.Remove(blockToDelete);
+            await DbContext.SaveChangesAsync();
+        }
+
+        Navigation.NavigateTo("/blocks");
+    }
+
+    private static string GetStatusText(BlockStatus status) => status switch
+    {
+        BlockStatus.Open => "Offen",
+        BlockStatus.InProgress => "In Arbeit",
+        BlockStatus.Understood => "Verstanden",
+        _ => status.ToString()
+    };
+
+    private static string GetDescription(string description)
+    {
+        return string.IsNullOrWhiteSpace(description)
+            ? "Keine Beschreibung."
+            : description;
+    }
+}
