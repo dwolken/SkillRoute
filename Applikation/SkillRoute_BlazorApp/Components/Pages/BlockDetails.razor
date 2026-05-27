@@ -43,33 +43,7 @@ else
     </div>
 
     <section class="border rounded p-4 mt-3">
-        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
-            <h2 class="h4 mb-0">Bestandteile</h2>
-
-            @if (availableChildBlocks.Count > 0)
-            {
-                <div class="d-flex flex-wrap gap-2">
-                    <select class="form-select" @bind="selectedChildBlockId" aria-label="Bestandteil auswählen">
-                        <option value="0">Baustein auswählen</option>
-                        @foreach (var availableBlock in availableChildBlocks)
-                        {
-                            <option value="@availableBlock.Id">@availableBlock.Title</option>
-                        }
-                    </select>
-
-                    <button class="btn btn-outline-primary" type="button" @onclick="AddPartAsync">
-                        Bestandteil hinzufügen
-                    </button>
-                </div>
-            }
-        </div>
-
-        @if (!string.IsNullOrWhiteSpace(partMessage))
-        {
-            <div class="alert alert-secondary py-2" role="status">
-                @partMessage
-            </div>
-        }
+        <h2 class="h4 mb-3">Bestandteile</h2>
 
         @if (block.Parts.Count == 0)
         {
@@ -93,21 +67,11 @@ else
                                 <p class="mb-0">Status: @GetStatusText(part.ChildBlock.Status)</p>
                             </div>
 
-                            <div class="d-flex flex-wrap align-items-start gap-2">
-                                <a class="btn btn-outline-secondary btn-sm" href="@($"/blocks/{part.ChildBlockId}")">Öffnen</a>
-                                <button class="btn btn-outline-danger btn-sm" type="button" @onclick="() => RemovePartAsync(part.Id)">
-                                    Entfernen
-                                </button>
-                            </div>
+                            <a class="btn btn-outline-secondary btn-sm" href="@($"/blocks/{part.ChildBlockId}")">Öffnen</a>
                         </div>
                     </div>
                 }
             </div>
-        }
-
-        @if (availableChildBlocks.Count == 0)
-        {
-            <p class="text-secondary mb-0 mt-3">Es gibt keinen weiteren Baustein zum Hinzufügen.</p>
         }
     </section>
 
@@ -156,16 +120,8 @@ else
     public int Id { get; set; }
 
     private LearningBlock? block;
-    private List<LearningBlock> availableChildBlocks = [];
-    private int selectedChildBlockId;
-    private string? partMessage;
 
     protected override async Task OnParametersSetAsync()
-    {
-        await LoadBlockAsync();
-    }
-
-    private async Task LoadBlockAsync()
     {
         block = await DbContext.LearningBlocks
             .AsNoTracking()
@@ -174,82 +130,6 @@ else
             .Include(learningBlock => learningBlock.UsedIn)
                 .ThenInclude(part => part.ParentBlock)
             .SingleOrDefaultAsync(learningBlock => learningBlock.Id == Id);
-
-        selectedChildBlockId = 0;
-
-        if (block is null)
-        {
-            availableChildBlocks = [];
-            return;
-        }
-
-        var childBlockIds = block.Parts
-            .Select(part => part.ChildBlockId)
-            .ToList();
-
-        availableChildBlocks = await DbContext.LearningBlocks
-            .AsNoTracking()
-            .Where(learningBlock => learningBlock.Id != block.Id && !childBlockIds.Contains(learningBlock.Id))
-            .OrderBy(learningBlock => learningBlock.Title)
-            .ThenBy(learningBlock => learningBlock.Id)
-            .ToListAsync();
-    }
-
-    private async Task AddPartAsync()
-    {
-        partMessage = null;
-
-        if (block is null || selectedChildBlockId == 0)
-        {
-            partMessage = "Bitte wähle zuerst einen Baustein aus.";
-            return;
-        }
-
-        if (selectedChildBlockId == block.Id)
-        {
-            partMessage = "Ein Baustein kann nicht sein eigener Bestandteil sein.";
-            return;
-        }
-
-        var childBlockExists = await DbContext.LearningBlocks
-            .AnyAsync(learningBlock => learningBlock.Id == selectedChildBlockId);
-
-        var partAlreadyExists = await DbContext.BlockParts
-            .AnyAsync(part => part.ParentBlockId == block.Id && part.ChildBlockId == selectedChildBlockId);
-
-        if (!childBlockExists || partAlreadyExists)
-        {
-            partMessage = "Dieser Bestandteil kann nicht hinzugefügt werden.";
-            await LoadBlockAsync();
-            return;
-        }
-
-        DbContext.BlockParts.Add(new BlockPart
-        {
-            ParentBlockId = block.Id,
-            ChildBlockId = selectedChildBlockId
-        });
-
-        await DbContext.SaveChangesAsync();
-        await LoadBlockAsync();
-    }
-
-    private async Task RemovePartAsync(int partId)
-    {
-        partMessage = null;
-
-        var part = await DbContext.BlockParts
-            .SingleOrDefaultAsync(part => part.Id == partId && part.ParentBlockId == Id);
-
-        if (part is null)
-        {
-            await LoadBlockAsync();
-            return;
-        }
-
-        DbContext.BlockParts.Remove(part);
-        await DbContext.SaveChangesAsync();
-        await LoadBlockAsync();
     }
 
     private async Task DeleteBlockAsync()
