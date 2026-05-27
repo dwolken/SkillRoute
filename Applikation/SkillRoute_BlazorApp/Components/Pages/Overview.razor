@@ -1,4 +1,9 @@
 @page "/overview"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using SkillRoute_BlazorApp.Infrastructure
+@using SkillRoute_BlazorApp.Model
+@inject SkillRouteDbContext DbContext
 
 <PageTitle>Übersicht</PageTitle>
 
@@ -8,3 +13,182 @@
         Die Übersicht zeigt, wie Lernblöcke zusammenhängen.
     </p>
 </div>
+
+@if (isLoading)
+{
+    <p>Übersicht wird geladen.</p>
+}
+else if (blockParts.Count == 0)
+{
+    <div class="border rounded p-4 text-secondary">
+        Es sind noch keine Verbindungen zwischen Bausteinen vorhanden.
+    </div>
+}
+else
+{
+    <div class="d-flex flex-column gap-3">
+        @foreach (var mainBlock in mainBlocks)
+        {
+            var rows = GetOverviewRows(mainBlock);
+
+            <section class="border rounded p-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                    <div>
+                        <h2 class="h4 mb-1">@mainBlock.Title</h2>
+                        <p class="mb-0 text-secondary">Status: @GetStatusText(mainBlock.Status)</p>
+
+                        @if (!string.IsNullOrWhiteSpace(mainBlock.Description))
+                        {
+                            <p class="mb-0 mt-2">@mainBlock.Description</p>
+                        }
+                    </div>
+
+                    <a class="btn btn-outline-secondary btn-sm flex-shrink-0" href="@($"/blocks/{mainBlock.Id}")">Öffnen</a>
+                </div>
+
+                @if (rows.Count > 0)
+                {
+                    <div class="list-group list-group-flush border-top mt-3">
+                        @foreach (var row in rows)
+                        {
+                            <div class="list-group-item px-0 py-3">
+                                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3" style="@GetIndentStyle(row.Depth)">
+                                    <div>
+                                        <h3 class="h5 mb-1">@row.Block.Title</h3>
+                                        <p class="mb-0 text-secondary">Status: @GetStatusText(row.Block.Status)</p>
+
+                                        @if (!string.IsNullOrWhiteSpace(row.Block.Description))
+                                        {
+                                            <p class="mb-0 mt-2">@row.Block.Description</p>
+                                        }
+
+                                        @if (row.WasAlreadyVisited)
+                                        {
+                                            <p class="mb-0 mt-2 text-secondary">
+                                                Dieser Baustein wurde weiter oben bereits angezeigt.
+                                            </p>
+                                        }
+                                    </div>
+
+                                    <a class="btn btn-outline-secondary btn-sm flex-shrink-0" href="@($"/blocks/{row.Block.Id}")">Öffnen</a>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private List<LearningBlock> learningBlocks = [];
+    private List<BlockPart> blockParts = [];
+    private List<LearningBlock> mainBlocks = [];
+    private Dictionary<int, List<BlockPart>> partsByParentBlockId = [];
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        learningBlocks = await DbContext.LearningBlocks
+            .AsNoTracking()
+            .OrderBy(block => block.Title)
+            .ThenBy(block => block.Id)
+            .ToListAsync();
+
+        blockParts = await DbContext.BlockParts
+            .AsNoTracking()
+            .Include(part => part.ChildBlock)
+            .OrderBy(part => part.ChildBlock.Title)
+            .ThenBy(part => part.ChildBlockId)
+            .ToListAsync();
+
+        partsByParentBlockId = blockParts
+            .GroupBy(part => part.ParentBlockId)
+            .ToDictionary(group => group.Key, group => group.ToList());
+
+        mainBlocks = GetMainBlocks();
+        isLoading = false;
+    }
+
+    private List<LearningBlock> GetMainBlocks()
+    {
+        var parentBlockIds = blockParts
+            .Select(part => part.ParentBlockId)
+            .Distinct()
+            .ToHashSet();
+
+        var childBlockIds = blockParts
+            .Select(part => part.ChildBlockId)
+            .Distinct()
+            .ToHashSet();
+
+        var rootBlockIds = parentBlockIds
+            .Where(parentBlockId => !childBlockIds.Contains(parentBlockId))
+            .ToHashSet();
+
+        if (rootBlockIds.Count == 0)
+        {
+            rootBlockIds = parentBlockIds;
+        }
+
+        return learningBlocks
+            .Where(block => rootBlockIds.Contains(block.Id))
+            .OrderBy(block => block.Title)
+            .ThenBy(block => block.Id)
+            .ToList();
+    }
+
+    private List<OverviewRow> GetOverviewRows(LearningBlock mainBlock)
+    {
+        var rows = new List<OverviewRow>();
+        var visitedBlockIds = new HashSet<int> { mainBlock.Id };
+
+        AddChildRows(mainBlock.Id, 1, visitedBlockIds, rows);
+
+        return rows;
+    }
+
+    private void AddChildRows(
+        int parentBlockId,
+        int depth,
+        HashSet<int> visitedBlockIds,
+        List<OverviewRow> rows)
+    {
+        if (!partsByParentBlockId.TryGetValue(parentBlockId, out var childParts))
+        {
+            return;
+        }
+
+        foreach (var part in childParts)
+        {
+            var childBlock = part.ChildBlock;
+
+            if (!visitedBlockIds.Add(childBlock.Id))
+            {
+                rows.Add(new OverviewRow(childBlock, depth, true));
+                continue;
+            }
+
+            rows.Add(new OverviewRow(childBlock, depth, false));
+            AddChildRows(childBlock.Id, depth + 1, visitedBlockIds, rows);
+            visitedBlockIds.Remove(childBlock.Id);
+        }
+    }
+
+    private static string GetIndentStyle(int depth)
+    {
+        var indent = Math.Min(depth, 4) * 1.25;
+        return $"margin-left: {indent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}rem;";
+    }
+
+    private static string GetStatusText(BlockStatus status) => status switch
+    {
+        BlockStatus.Open => "Offen",
+        BlockStatus.InProgress => "In Arbeit",
+        BlockStatus.Understood => "Verstanden",
+        _ => status.ToString()
+    };
+
+    private sealed record OverviewRow(LearningBlock Block, int Depth, bool WasAlreadyVisited);
+}
