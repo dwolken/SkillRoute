@@ -7,6 +7,7 @@
 @using SkillRoute_BlazorApp.Model
 @inject SkillRouteDbContext DbContext
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>@PageTitleText</PageTitle>
 
@@ -51,6 +52,16 @@ else
                     <option value="@status">@GetStatusText(status)</option>
                 }
             </InputSelect>
+
+            @if (ShouldShowNestedPartsWarning)
+            {
+                <div class="alert alert-warning mt-3 mb-0" role="alert">
+                    <p class="mb-3">Hinweis: Nicht alle untergeordneten Bestandteile sind bereits verstanden.</p>
+                    <button class="btn btn-outline-dark btn-sm" type="button" @onclick="MarkNestedPartsAsUnderstoodAsync">
+                        Alle untergeordneten Bestandteile als verstanden markieren
+                    </button>
+                </div>
+            }
         </div>
 
         @if (block is not null)
@@ -131,6 +142,7 @@ else
     private BlockForm form = new();
     private List<BlockPart> parts = [];
     private List<LearningBlock> availableChildBlocks = [];
+    private List<LearningBlock> nestedChildBlocks = [];
     private bool isLoading = true;
     private int selectedChildBlockId;
     private string? partMessage;
@@ -139,6 +151,11 @@ else
 
     private string BackLink => Id.HasValue ? $"/blocks/{Id}" : "/blocks";
 
+    private bool ShouldShowNestedPartsWarning =>
+        block is not null
+        && form.Status == BlockStatus.Understood
+        && nestedChildBlocks.Any(childBlock => childBlock.Status != BlockStatus.Understood);
+
     protected override async Task OnParametersSetAsync()
     {
         isLoading = true;
@@ -146,6 +163,7 @@ else
         form = new BlockForm();
         parts = [];
         availableChildBlocks = [];
+        nestedChildBlocks = [];
         selectedChildBlockId = 0;
         partMessage = null;
 
@@ -190,6 +208,43 @@ else
         Navigation.NavigateTo($"/blocks/{block.Id}");
     }
 
+    private async Task MarkNestedPartsAsUnderstoodAsync()
+    {
+        if (block is null)
+        {
+            return;
+        }
+
+        var shouldMarkAsUnderstood = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Alle untergeordneten Bestandteile werden als verstanden markiert. Fortfahren?");
+
+        if (!shouldMarkAsUnderstood)
+        {
+            return;
+        }
+
+        var nestedChildBlockIds = await GetNestedChildBlockIdsAsync(block.Id);
+        if (nestedChildBlockIds.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var childBlocks = await DbContext.LearningBlocks
+            .Where(learningBlock => nestedChildBlockIds.Contains(learningBlock.Id))
+            .ToListAsync();
+
+        foreach (var childBlock in childBlocks)
+        {
+            childBlock.Status = BlockStatus.Understood;
+            childBlock.UpdatedAt = now;
+        }
+
+        await DbContext.SaveChangesAsync();
+        await LoadPartsAsync();
+    }
+
     private async Task LoadPartsAsync()
     {
         selectedChildBlockId = 0;
@@ -198,6 +253,7 @@ else
         {
             parts = [];
             availableChildBlocks = [];
+            nestedChildBlocks = [];
             return;
         }
 
@@ -219,6 +275,8 @@ else
             .OrderBy(learningBlock => learningBlock.Title)
             .ThenBy(learningBlock => learningBlock.Id)
             .ToListAsync();
+
+        await LoadNestedChildBlocksAsync();
     }
 
     private async Task AddPartAsync()
@@ -281,6 +339,55 @@ else
         DbContext.BlockParts.Remove(part);
         await DbContext.SaveChangesAsync();
         await LoadPartsAsync();
+    }
+
+    private async Task LoadNestedChildBlocksAsync()
+    {
+        if (block is null)
+        {
+            nestedChildBlocks = [];
+            return;
+        }
+
+        var nestedChildBlockIds = await GetNestedChildBlockIdsAsync(block.Id);
+
+        nestedChildBlocks = await DbContext.LearningBlocks
+            .AsNoTracking()
+            .Where(learningBlock => nestedChildBlockIds.Contains(learningBlock.Id))
+            .ToListAsync();
+    }
+
+    private async Task<List<int>> GetNestedChildBlockIdsAsync(int parentBlockId)
+    {
+        var result = new List<int>();
+        var visitedBlockIds = new HashSet<int> { parentBlockId };
+
+        await AddNestedChildBlockIdsAsync(parentBlockId, visitedBlockIds, result);
+
+        return result;
+    }
+
+    private async Task AddNestedChildBlockIdsAsync(
+        int parentBlockId,
+        HashSet<int> visitedBlockIds,
+        List<int> result)
+    {
+        var childBlockIds = await DbContext.BlockParts
+            .AsNoTracking()
+            .Where(part => part.ParentBlockId == parentBlockId)
+            .Select(part => part.ChildBlockId)
+            .ToListAsync();
+
+        foreach (var childBlockId in childBlockIds)
+        {
+            if (!visitedBlockIds.Add(childBlockId))
+            {
+                continue;
+            }
+
+            result.Add(childBlockId);
+            await AddNestedChildBlockIdsAsync(childBlockId, visitedBlockIds, result);
+        }
     }
 
     private static string GetStatusText(BlockStatus status) => status switch
