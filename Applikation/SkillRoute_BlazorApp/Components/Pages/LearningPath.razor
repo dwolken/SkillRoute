@@ -1,0 +1,114 @@
+﻿@page "/lernpfad"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using SkillRoute_BlazorApp.Infrastructure
+@using SkillRoute_BlazorApp.Model
+@using SkillRoute_BlazorApp.Services
+@inject SkillRouteDbContext DbContext
+
+<PageTitle>Lernpfad</PageTitle>
+
+<div class="page-header">
+    <h1>Lernpfad</h1>
+    <p class="lead">Wähle einen Lernblock um den Lernpfad zu berechnen.</p>
+</div>
+
+@if (allBlocks is null)
+{
+    <p>Lade...</p>
+}
+else
+{
+    <div class="mb-4">
+        <label class="form-label" for="blockSelect">Ziel-Lernblock</label>
+        <select id="blockSelect" class="form-select" style="max-width: 400px;" @onchange="OnBlockSelected">
+            <option value="">– Bitte wählen –</option>
+            @foreach (var block in allBlocks)
+            {
+                <option value="@block.Id">@block.Title</option>
+            }
+        </select>
+    </div>
+
+    @if (learningPath is not null)
+    {
+        @if (learningPath.Count == 0)
+        {
+            <div class="border rounded p-3 text-secondary">
+                Dieser Block hat keine Bestandteile.
+            </div>
+        }
+        else
+        {
+            <ol class="list-group list-group-numbered">
+                @foreach (var node in learningPath)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                        <div class="ms-2 me-auto">
+                            <div class="fw-bold">@node.Title</div>
+                        </div>
+                        <span class="text-secondary small">@node.Status</span>
+                    </li>
+                }
+            </ol>
+        }
+    }
+}
+
+@code {
+    private List<LearningBlock>? allBlocks;
+    private List<LearningPathNode>? learningPath;
+    private List<BlockPart> allParts = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        allBlocks = await DbContext.LearningBlocks.OrderBy(b => b.Title).ToListAsync();
+        allParts = await DbContext.BlockParts.ToListAsync();
+    }
+
+    private void OnBlockSelected(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var id))
+        {
+            learningPath = null;
+            return;
+        }
+
+        var visited = new HashSet<int>();
+        var linkedList = new LearningPathLinkedList();
+        BuildPath(id, visited, linkedList);
+        learningPath = linkedList.ToList();
+    }
+
+    private void BuildPath(int blockId, HashSet<int> visited, LearningPathLinkedList linkedList)
+    {
+        if (visited.Contains(blockId)) return;
+        visited.Add(blockId);
+
+        var children = allParts
+            .Where(p => p.ParentBlockId == blockId)
+            .Select(p => allBlocks!.FirstOrDefault(b => b.Id == p.ChildBlockId))
+            .Where(b => b is not null)
+            .Cast<LearningBlock>()
+            .ToList();
+
+        foreach (var child in children)
+        {
+            BuildPath(child.Id, visited, linkedList);
+            linkedList.AddLast(new LearningPathNode
+            {
+                BlockId = child.Id,
+                Title = child.Title,
+                Status = GetStatusText(child.Status)
+            });
+        }
+    }
+
+    private static string GetStatusText(BlockStatus status) => status switch
+    {
+        BlockStatus.Open => "Offen",
+        BlockStatus.InProgress => "In Arbeit",
+        BlockStatus.Understood => "Verstanden",
+        _ => status.ToString()
+    };
+}
